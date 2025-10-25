@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput } from 'react-native';
 
 import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
@@ -11,11 +11,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function HomeScreen() {
   const [healthUserId, setHealthUserId] = useState('');
+  const [healthUserName, setHealthUserName] = useState('');
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const trimmedId = healthUserId.trim();
+  const trimmedUserName = healthUserName.trim();
   const canNavigate = trimmedId.length > 0;
+  const canNavigateUserName = trimmedUserName.length > 0;
 
   const handleNavigate = () => {
     if (!canNavigate) {
@@ -23,8 +26,19 @@ export default function HomeScreen() {
     }
 
     router.push({
-      pathname: '/access-requests/[healthUserId]',
+      pathname: '/access-requests/by-id/[healthUserId]',
       params: { healthUserId: trimmedId },
+    });
+  };
+
+  const handleNavigateUserName = () => {
+    if (!canNavigateUserName) {
+      return;
+    }
+
+    router.push({
+      pathname: '/access-requests/by-name/[healthUserName]',
+      params: { healthUserName: trimmedUserName },
     });
   };
 
@@ -72,11 +86,37 @@ export default function HomeScreen() {
           </ThemedText>
         </Pressable>
       </ThemedView>
+      <ThemedView style={styles.formContainer}>
+        <ThemedText type="subtitle">Health User Name</ThemedText>
+        <TextInput
+          value={healthUserName}
+          onChangeText={setHealthUserName}
+          placeholder="e.g. John Doe"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[styles.input, isDark && styles.inputDark]}
+          returnKeyType="go"
+          onSubmitEditing={handleNavigateUserName}
+          placeholderTextColor={isDark ? '#9aa4b2' : '#667085'}
+          cursorColor={isDark ? '#e2e8f0' : '#0a7ea4'}
+          selectionColor={isDark ? '#0a7ea4' : '#0a7ea4'}
+        />
+        <Pressable
+          onPress={handleNavigateUserName}
+          style={[styles.button, !canNavigateUserName && styles.buttonDisabled]}
+          disabled={!canNavigateUserName}>
+          <ThemedText type="defaultSemiBold" style={styles.buttonText}>
+            Open access requests by name
+          </ThemedText>
+        </Pressable>
+      </ThemedView>
       <ThemedView style={styles.noteContainer}>
         <ThemedText>
           You can also navigate directly by visiting{' '}
-          <ThemedText type="defaultSemiBold">/access-requests/&lt;health-user-id&gt;</ThemedText> in
-          the Expo Router.
+          <ThemedText type="defaultSemiBold">/access-requests/by-id/&lt;health-user-id&gt;</ThemedText>{' '}
+          or{' '}
+          <ThemedText type="defaultSemiBold">/access-requests/by-name/&lt;health-user-name&gt;</ThemedText>{' '}
+          in the Expo Router.
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>

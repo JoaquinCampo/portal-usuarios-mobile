@@ -1,22 +1,22 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    View,
+    useWindowDimensions,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
-  ApiConfigurationError,
-  fetchHealthUserAccessRequests,
+    ApiConfigurationError,
+    fetchHealthUserAccessRequests,
 } from '@/lib/api';
 import type { AccessRequestDTO } from '@/types/AccessRequestDTO';
 
@@ -74,7 +74,7 @@ export default function AccessRequestsForHealthUserScreen() {
       setState({
         status: 'error',
         data: [],
-        error: 'Missing health user id. Append it to the route as /access-requests/<health-user-id>.',
+        error: 'Missing health user id. Append it to the route as /access-requests/by-id/<health-user-id>.',
       });
       return;
     }
@@ -265,3 +265,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+

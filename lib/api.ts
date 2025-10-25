@@ -11,12 +11,10 @@ const globalWithHelpers = globalThis as GlobalWithHelpers;
 
 const BACKEND_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL?.trim() ?? process.env.BACKEND_URL?.trim() ?? '';
-console.log(BACKEND_URL);
 
 const BACKEND_USERNAME =
   process.env.EXPO_PUBLIC_BACKEND_USERNAME?.trim() ?? process.env.BACKEND_USERNAME?.trim();
 
-console.log(BACKEND_USERNAME);
 const BACKEND_PASSWORD =
   process.env.EXPO_PUBLIC_BACKEND_PASSWORD?.trim() ?? process.env.BACKEND_PASSWORD?.trim();
 
@@ -68,25 +66,67 @@ const buildUrl = (path: string) => {
   return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
-const isAccessRequestDTO = (value: unknown): value is AccessRequestDTO => {
+const toAccessRequestDTO = (value: unknown): AccessRequestDTO | null => {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
   const candidate = value as Record<string, unknown>;
 
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.healthUserId === 'string' &&
-    typeof candidate.healthWorkerId === 'string' &&
-    typeof candidate.healthWorkerName === 'string' &&
-    typeof candidate.clinicId === 'string' &&
-    typeof candidate.clinicName === 'string' &&
-    typeof candidate.specialtyId === 'string' &&
-    typeof candidate.specialtyName === 'string' &&
-    typeof candidate.createdAt === 'string' &&
-    typeof candidate.updatedAt === 'string'
-  );
+  const getString = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const v = candidate[key];
+      if (v == null) continue;
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    }
+    return undefined;
+  };
+
+  const getDateString = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const v = candidate[key];
+      if (v == null) continue;
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number') {
+        const d = new Date(v);
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+      }
+    }
+    return undefined;
+  };
+
+  const dto: Partial<AccessRequestDTO> = {
+    id: getString(['id']),
+    healthUserId: getString(['healthUserId', 'userId', 'patientId']),
+    healthWorkerId: getString(['healthWorkerId', 'workerId']),
+    healthWorkerName: getString(['healthWorkerName', 'healthWorkerFullName', 'workerName']),
+    clinicId: getString(['clinicId']),
+    clinicName: getString(['clinicName']),
+    specialtyId: getString(['specialtyId']),
+    specialtyName: getString(['specialtyName']),
+    createdAt: getDateString(['createdAt', 'created_at']),
+    updatedAt: getDateString(['updatedAt', 'updated_at']),
+  };
+
+  const requiredKeys: (keyof AccessRequestDTO)[] = [
+    'id',
+    'healthUserId',
+    'healthWorkerId',
+    'healthWorkerName',
+    'clinicId',
+    'clinicName',
+    'specialtyId',
+    'specialtyName',
+    'createdAt',
+    'updatedAt',
+  ];
+
+  for (const key of requiredKeys) {
+    if (!dto[key]) return null;
+  }
+
+  return dto as AccessRequestDTO;
 };
 
 export const fetchHealthUserAccessRequests = async (
@@ -107,7 +147,15 @@ export const fetchHealthUserAccessRequests = async (
     headers.Authorization = auth;
   }
 
+  if (__DEV__) {
+    console.log('[API] GET', url);
+  }
+
   const response = await fetch(url, { headers });
+
+  if (__DEV__) {
+    console.log('[API] status', response.status);
+  }
 
   if (!response.ok) {
     const errorPayload = await response.text().catch(() => '');
@@ -118,8 +166,20 @@ export const fetchHealthUserAccessRequests = async (
 
   const data = (await response.json()) as unknown;
 
+  if (__DEV__) {
+    if (Array.isArray(data)) {
+      console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
+    } else if (data && typeof data === 'object') {
+      console.log('[API] object keys', Object.keys(data as Record<string, unknown>));
+    } else {
+      console.log('[API] unexpected payload type', typeof data);
+    }
+  }
+
   if (Array.isArray(data)) {
-    const typed = data.filter(isAccessRequestDTO);
+    const typed = data
+      .map(toAccessRequestDTO)
+      .filter((v): v is AccessRequestDTO => v !== null);
 
     if (typed.length !== data.length) {
       console.warn('Filtered out invalid access request entries from response payload.');
@@ -128,9 +188,85 @@ export const fetchHealthUserAccessRequests = async (
     return typed;
   }
 
-  if (isAccessRequestDTO(data)) {
+  const single = toAccessRequestDTO(data);
+  if (single) {
     console.warn('Received object instead of array. Coercing into single-item array.');
-    return [data];
+    return [single];
+  }
+
+  throw new Error('Unexpected API response while reading access requests.');
+};
+
+export const fetchHealthUserAccessRequestsByName = async (
+  healthUserName: string
+): Promise<AccessRequestDTO[]> => {
+  if (__DEV__) {
+    console.log('[API] fetching by name', healthUserName);
+  }
+  if (!healthUserName) {
+    throw new Error('healthUserName is required');
+  }
+
+  const url = buildUrl(
+    `access-requests/health-user/name/${encodeURIComponent(healthUserName)}`
+  );
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  if (__DEV__) {
+    console.log('[API] GET', url);
+  }
+
+  const response = await fetch(url, { headers });
+
+  if (__DEV__) {
+    console.log('[API] status', response.status);
+  }
+
+  if (!response.ok) {
+    const errorPayload = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to fetch access requests (${response.status}): ${
+        errorPayload || response.statusText
+      }`
+    );
+  }
+
+  const data = (await response.json()) as unknown;
+
+  if (__DEV__) {
+    if (Array.isArray(data)) {
+      console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
+    } else if (data && typeof data === 'object') {
+      console.log('[API] object keys', Object.keys(data as Record<string, unknown>));
+    } else {
+      console.log('[API] unexpected payload type', typeof data);
+    }
+  }
+
+  if (Array.isArray(data)) {
+    const typed = data
+      .map(toAccessRequestDTO)
+      .filter((v): v is AccessRequestDTO => v !== null);
+
+    if (typed.length !== data.length) {
+      console.warn('Filtered out invalid access request entries from response payload.');
+    }
+
+    return typed;
+  }
+
+  const singleByName = toAccessRequestDTO(data);
+  if (singleByName) {
+    console.warn('Received object instead of array. Coercing into single-item array.');
+    return [singleByName];
   }
 
   throw new Error('Unexpected API response while reading access requests.');
