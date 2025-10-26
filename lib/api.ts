@@ -344,3 +344,28 @@ export const deleteNotificationToken = async (userId: string, token: string) => 
     );
   }
 };
+
+export const actOnAccessRequest = async (accessRequestId: string, healthUserId: string, endpoint: 'grant-by-clinic' | 'grant-by-health-worker' | 'grant-by-specialty' | 'deny'): Promise<Response> => {
+  assertNonEmpty(accessRequestId, 'accessRequestId');
+  assertNonEmpty(healthUserId, 'healthUserId');
+  assertNonEmpty(endpoint, 'endpoint');
+
+  const url = buildUrl(`/access-requests/${endpoint}`);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ accessRequestId, healthUserId }),
+  });
+
+  return response;
+};
