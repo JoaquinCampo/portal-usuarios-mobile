@@ -14,6 +14,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import {
     ApiConfigurationError,
     fetchHealthUserAccessRequests,
@@ -37,9 +38,17 @@ export default function AccessRequestsForHealthUserScreen() {
   const isDark = colorScheme === 'dark';
   const { healthUserId: rawHealthUserId } = useLocalSearchParams<{ healthUserId?: string | string[] }>();
   const healthUserId = Array.isArray(rawHealthUserId) ? rawHealthUserId[0] : rawHealthUserId;
+  const {
+    token: notificationToken,
+    error: notificationError,
+    permissionStatus: notificationPermissionStatus,
+    isRegistering: isRegisteringNotification,
+  } = usePushNotifications(healthUserId);
   const [state, setState] = useState<ScreenState>({ status: 'idle', data: [], error: null });
   const window = useWindowDimensions();
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
+  const notificationsReady =
+    notificationPermissionStatus === 'granted' && typeof notificationToken === 'string';
 
   const toggleActions = useCallback((requestId: string) => {
     setExpandedRequestId((current) => (current === requestId ? null : requestId));
@@ -124,6 +133,21 @@ export default function AccessRequestsForHealthUserScreen() {
         <View style={styles.header}>
           <ThemedText type="title">Access Requests</ThemedText>
         </View>
+
+        {!notificationsReady || notificationError ? (
+          <View style={[styles.card, isDark ? styles.cardDark : styles.cardLight, styles.infoCard]}>
+            <ThemedText type="subtitle">Push notifications</ThemedText>
+            {notificationError ? (
+              <ThemedText style={styles.errorText}>{notificationError}</ThemedText>
+            ) : (
+              <ThemedText>
+                {isRegisteringNotification
+                  ? 'Registering this device for notifications…'
+                  : 'Notifications are not active yet. Confirm permissions and native Firebase setup.'}
+              </ThemedText>
+            )}
+          </View>
+        ) : null}
 
         {state.status === 'loading' && state.data.length === 0 ? (
           <ActivityIndicator size="large" color={isDark ? '#ffffff' : '#000000'} />
@@ -223,6 +247,9 @@ const styles = StyleSheet.create({
   },
   cardDark: {
     backgroundColor: '#1c1f24',
+  },
+  infoCard: {
+    marginBottom: 4,
   },
   errorText: {
     color: '#d92d20',

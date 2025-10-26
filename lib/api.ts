@@ -147,13 +147,13 @@ export const fetchHealthUserAccessRequests = async (
     headers.Authorization = auth;
   }
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     console.log('[API] GET', url);
   }
 
   const response = await fetch(url, { headers });
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     console.log('[API] status', response.status);
   }
 
@@ -166,7 +166,7 @@ export const fetchHealthUserAccessRequests = async (
 
   const data = (await response.json()) as unknown;
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     if (Array.isArray(data)) {
       console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
     } else if (data && typeof data === 'object') {
@@ -200,7 +200,7 @@ export const fetchHealthUserAccessRequests = async (
 export const fetchHealthUserAccessRequestsByName = async (
   healthUserName: string
 ): Promise<AccessRequestDTO[]> => {
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     console.log('[API] fetching by name', healthUserName);
   }
   if (!healthUserName) {
@@ -220,13 +220,13 @@ export const fetchHealthUserAccessRequestsByName = async (
     headers.Authorization = auth;
   }
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     console.log('[API] GET', url);
   }
 
   const response = await fetch(url, { headers });
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     console.log('[API] status', response.status);
   }
 
@@ -241,7 +241,7 @@ export const fetchHealthUserAccessRequestsByName = async (
 
   const data = (await response.json()) as unknown;
 
-  if (__DEV__) {
+  if (process.env.NODE_ENV === 'development') {
     if (Array.isArray(data)) {
       console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
     } else if (data && typeof data === 'object') {
@@ -270,4 +270,77 @@ export const fetchHealthUserAccessRequestsByName = async (
   }
 
   throw new Error('Unexpected API response while reading access requests.');
+};
+
+const assertNonEmpty = (value: string, label: string) => {
+  if (!value) {
+    throw new Error(`${label} is required`);
+  }
+};
+
+export const registerNotificationToken = async (userId: string, token: string) => {
+  assertNonEmpty(userId, 'userId');
+  assertNonEmpty(token, 'token');
+
+  const url = buildUrl('/notification-tokens');
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ userId, token }),
+  });
+
+  console.log('response', response);
+
+  if (!response.ok) {
+    const errorPayload = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to register notification token (${response.status}): ${
+        errorPayload || response.statusText
+      }`
+    );
+  }
+};
+
+export const deleteNotificationToken = async (userId: string, token: string) => {
+  assertNonEmpty(userId, 'userId');
+  assertNonEmpty(token, 'token');
+
+  const url = buildUrl(
+    `/notification-tokens/${encodeURIComponent(userId)}/${encodeURIComponent(token)}`
+  );
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const errorPayload = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to delete notification token (${response.status}): ${
+        errorPayload || response.statusText
+      }`
+    );
+  }
 };

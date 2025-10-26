@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "857311781983",
+    "project_id": "hcen-4153f",
+    "storage_bucket": "hcen-4153f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:857311781983:android:66cb1717acd7f54f23a7ea",
+        "android_client_info": {
+          "package_name": "portal.usuarios.web"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWlMLOvV1wDoJM24bpaCYDu08i8eDeuxA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

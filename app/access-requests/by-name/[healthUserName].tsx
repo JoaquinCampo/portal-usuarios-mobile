@@ -1,22 +1,22 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    View,
-    useWindowDimensions,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
-    ApiConfigurationError,
-    fetchHealthUserAccessRequestsByName,
+  ApiConfigurationError,
+  fetchHealthUserAccessRequestsByName,
 } from '@/lib/api';
 import type { AccessRequestDTO } from '@/types/AccessRequestDTO';
 
@@ -34,6 +34,7 @@ const formatDateTime = (isoString: string) => {
 
 export default function AccessRequestsForHealthUserByNameScreen() {
   const colorScheme = useColorScheme();
+  
   const isDark = colorScheme === 'dark';
   const { healthUserName: rawHealthUserName } = useLocalSearchParams<{ healthUserName?: string | string[] }>();
   const healthUserName = Array.isArray(rawHealthUserName) ? rawHealthUserName[0] : rawHealthUserName;

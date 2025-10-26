@@ -19,13 +19,23 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
+      "package": "portal.usuarios.web"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "androidMode": "default",
+          "googleServicesFile": "./google-services.json"
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
@@ -43,6 +53,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9c7ca691-54fc-4619-99c7-31f0cd406a98"
+      }
+    },
+    "owner": "tse"
   }
 }
