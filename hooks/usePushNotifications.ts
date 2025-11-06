@@ -30,6 +30,7 @@ export interface PushNotificationState {
   isRegistering: boolean;
   error: string | null;
   isDevice: boolean;
+  cleanupOnLogout: () => Promise<void>;
 }
 
 const ensureAndroidChannelAsync = async () => {
@@ -67,12 +68,8 @@ export const usePushNotifications = (userId?: string | null): PushNotificationSt
         responseListener.current.remove();
       }
 
-      const { userId: registeredUser, token: registeredToken } = registrationRef.current;
-      if (registeredUser && registeredToken) {
-        deleteNotificationToken(registeredUser, registeredToken).catch((cleanupError) => {
-          console.warn('Failed to delete notification token on cleanup', cleanupError);
-        });
-      }
+      // Don't delete the token on unmount - it should persist across sessions
+      // Token deletion should only happen on explicit logout
     };
   }, []);
 
@@ -185,6 +182,20 @@ export const usePushNotifications = (userId?: string | null): PushNotificationSt
     };
   }, [userId]);
 
+  const cleanupOnLogout = async () => {
+    const { userId: registeredUser, token: registeredToken } = registrationRef.current;
+    if (registeredUser && registeredToken) {
+      try {
+        await deleteNotificationToken(registeredUser, registeredToken);
+        registrationRef.current = { userId: null, token: null };
+        setToken(null);
+      } catch (cleanupError) {
+        console.warn('Failed to delete notification token on logout', cleanupError);
+        throw cleanupError;
+      }
+    }
+  };
+
   return {
     token,
     notification,
@@ -192,5 +203,6 @@ export const usePushNotifications = (userId?: string | null): PushNotificationSt
     isRegistering,
     error,
     isDevice: Device.isDevice,
+    cleanupOnLogout,
   };
 };

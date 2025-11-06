@@ -1,4 +1,6 @@
 import type { AccessRequestDTO } from '@/types/AccessRequestDTO';
+import type { AddClinicAccessPolicyDTO } from '@/types/AddClinicAccessPolicyDTO';
+import type { AddHealthWorkerAccessPolicyDTO } from '@/types/AddHealthWorkerAccessPolicyDTO';
 
 type GlobalWithHelpers = typeof globalThis & {
   btoa?: (data: string) => string;
@@ -66,67 +68,18 @@ const buildUrl = (path: string) => {
   return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
-const toAccessRequestDTO = (value: unknown): AccessRequestDTO | null => {
+const isAccessRequestDTO = (value: unknown): value is AccessRequestDTO => {
   if (!value || typeof value !== 'object') {
-    return null;
+    return false;
   }
 
-  const candidate = value as Record<string, unknown>;
+  const candidate = value as Partial<AccessRequestDTO>;
 
-  const getString = (keys: string[]): string | undefined => {
-    for (const key of keys) {
-      const v = candidate[key];
-      if (v == null) continue;
-      if (typeof v === 'string') return v;
-      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-    }
-    return undefined;
-  };
-
-  const getDateString = (keys: string[]): string | undefined => {
-    for (const key of keys) {
-      const v = candidate[key];
-      if (v == null) continue;
-      if (typeof v === 'string') return v;
-      if (typeof v === 'number') {
-        const d = new Date(v);
-        if (!Number.isNaN(d.getTime())) return d.toISOString();
-      }
-    }
-    return undefined;
-  };
-
-  const dto: Partial<AccessRequestDTO> = {
-    id: getString(['id']),
-    healthUserId: getString(['healthUserId', 'userId', 'patientId']),
-    healthWorkerId: getString(['healthWorkerId', 'workerId']),
-    healthWorkerName: getString(['healthWorkerName', 'healthWorkerFullName', 'workerName']),
-    clinicId: getString(['clinicId']),
-    clinicName: getString(['clinicName']),
-    specialtyId: getString(['specialtyId']),
-    specialtyName: getString(['specialtyName']),
-    createdAt: getDateString(['createdAt', 'created_at']),
-    updatedAt: getDateString(['updatedAt', 'updated_at']),
-  };
-
-  const requiredKeys: (keyof AccessRequestDTO)[] = [
-    'id',
-    'healthUserId',
-    'healthWorkerId',
-    'healthWorkerName',
-    'clinicId',
-    'clinicName',
-    'specialtyId',
-    'specialtyName',
-    'createdAt',
-    'updatedAt',
-  ];
-
-  for (const key of requiredKeys) {
-    if (!dto[key]) return null;
-  }
-
-  return dto as AccessRequestDTO;
+  return !!(
+    candidate.id &&
+    candidate.healthWorker &&
+    candidate.clinic
+  );
 };
 
 export const fetchHealthUserAccessRequests = async (
@@ -136,7 +89,7 @@ export const fetchHealthUserAccessRequests = async (
     throw new Error('healthUserId is required');
   }
 
-  const url = buildUrl(`access-requests/health-user/${encodeURIComponent(healthUserId)}`);
+  const url = buildUrl(`access-requests?healthUserCi=${encodeURIComponent(healthUserId)}`);
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };
@@ -177,9 +130,7 @@ export const fetchHealthUserAccessRequests = async (
   }
 
   if (Array.isArray(data)) {
-    const typed = data
-      .map(toAccessRequestDTO)
-      .filter((v): v is AccessRequestDTO => v !== null);
+    const typed = data.filter(isAccessRequestDTO);
 
     if (typed.length !== data.length) {
       console.warn('Filtered out invalid access request entries from response payload.');
@@ -188,89 +139,14 @@ export const fetchHealthUserAccessRequests = async (
     return typed;
   }
 
-  const single = toAccessRequestDTO(data);
-  if (single) {
+  if (isAccessRequestDTO(data)) {
     console.warn('Received object instead of array. Coercing into single-item array.');
-    return [single];
+    return [data];
   }
 
   throw new Error('Unexpected API response while reading access requests.');
 };
 
-export const fetchHealthUserAccessRequestsByName = async (
-  healthUserName: string
-): Promise<AccessRequestDTO[]> => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[API] fetching by name', healthUserName);
-  }
-  if (!healthUserName) {
-    throw new Error('healthUserName is required');
-  }
-
-  const url = buildUrl(
-    `access-requests/health-user/name/${encodeURIComponent(healthUserName)}`
-  );
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-  };
-
-  const auth = getAuthHeader();
-
-  if (auth) {
-    headers.Authorization = auth;
-  }
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[API] GET', url);
-  }
-
-  const response = await fetch(url, { headers });
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[API] status', response.status);
-  }
-
-  if (!response.ok) {
-    const errorPayload = await response.text().catch(() => '');
-    throw new Error(
-      `Failed to fetch access requests (${response.status}): ${
-        errorPayload || response.statusText
-      }`
-    );
-  }
-
-  const data = (await response.json()) as unknown;
-
-  if (process.env.NODE_ENV === 'development') {
-    if (Array.isArray(data)) {
-      console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
-    } else if (data && typeof data === 'object') {
-      console.log('[API] object keys', Object.keys(data as Record<string, unknown>));
-    } else {
-      console.log('[API] unexpected payload type', typeof data);
-    }
-  }
-
-  if (Array.isArray(data)) {
-    const typed = data
-      .map(toAccessRequestDTO)
-      .filter((v): v is AccessRequestDTO => v !== null);
-
-    if (typed.length !== data.length) {
-      console.warn('Filtered out invalid access request entries from response payload.');
-    }
-
-    return typed;
-  }
-
-  const singleByName = toAccessRequestDTO(data);
-  if (singleByName) {
-    console.warn('Received object instead of array. Coercing into single-item array.');
-    return [singleByName];
-  }
-
-  throw new Error('Unexpected API response while reading access requests.');
-};
 
 const assertNonEmpty = (value: string, label: string) => {
   if (!value) {
@@ -278,8 +154,8 @@ const assertNonEmpty = (value: string, label: string) => {
   }
 };
 
-export const registerNotificationToken = async (userId: string, token: string) => {
-  assertNonEmpty(userId, 'userId');
+export const registerNotificationToken = async (userCi: string, token: string) => {
+  assertNonEmpty(userCi, 'userCi');
   assertNonEmpty(token, 'token');
 
   const url = buildUrl('/notification-tokens');
@@ -297,7 +173,7 @@ export const registerNotificationToken = async (userId: string, token: string) =
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ userId, token }),
+    body: JSON.stringify({ userCi, token }),
   });
 
   console.log('response', response);
@@ -312,12 +188,12 @@ export const registerNotificationToken = async (userId: string, token: string) =
   }
 };
 
-export const deleteNotificationToken = async (userId: string, token: string) => {
-  assertNonEmpty(userId, 'userId');
+export const deleteNotificationToken = async (userCi: string, token: string) => {
+  assertNonEmpty(userCi, 'userCi');
   assertNonEmpty(token, 'token');
 
   const url = buildUrl(
-    `/notification-tokens/${encodeURIComponent(userId)}/${encodeURIComponent(token)}`
+    `/notification-tokens/${encodeURIComponent(userCi)}/${encodeURIComponent(token)}`
   );
 
   const headers: Record<string, string> = {
@@ -345,12 +221,17 @@ export const deleteNotificationToken = async (userId: string, token: string) => 
   }
 };
 
-export const actOnAccessRequest = async (accessRequestId: string, healthUserId: string, endpoint: 'grant-by-clinic' | 'grant-by-health-worker' | 'grant-by-specialty' | 'deny'): Promise<Response> => {
-  assertNonEmpty(accessRequestId, 'accessRequestId');
-  assertNonEmpty(healthUserId, 'healthUserId');
-  assertNonEmpty(endpoint, 'endpoint');
+/**
+ * Grant clinic access policy based on an access request
+ */
+export const grantClinicAccessPolicy = async (
+  accessRequest: AccessRequestDTO
+): Promise<Response> => {
+  assertNonEmpty(accessRequest.id, 'accessRequestId');
+  assertNonEmpty(accessRequest.healthUserId, 'healthUserId');
+  assertNonEmpty(accessRequest.clinic.name, 'clinicName');
 
-  const url = buildUrl(`/access-requests/${endpoint}`);
+  const url = buildUrl('/access-policies/clinic');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -361,10 +242,79 @@ export const actOnAccessRequest = async (accessRequestId: string, healthUserId: 
     headers.Authorization = auth;
   }
 
+  const payload: AddClinicAccessPolicyDTO = {
+    healthUserId: accessRequest.healthUserId,
+    clinicName: accessRequest.clinic.name,
+    accessRequestId: accessRequest.id,
+  };
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ accessRequestId, healthUserId }),
+    body: JSON.stringify(payload),
+  });
+
+  return response;
+};
+
+/**
+ * Grant health worker access policy based on an access request
+ */
+export const grantHealthWorkerAccessPolicy = async (
+  accessRequest: AccessRequestDTO
+): Promise<Response> => {
+  assertNonEmpty(accessRequest.id, 'accessRequestId');
+  assertNonEmpty(accessRequest.healthUserId, 'healthUserId');
+  assertNonEmpty(accessRequest.healthWorker.ci, 'healthWorkerCi');
+  assertNonEmpty(accessRequest.clinic.name, 'clinicName');
+
+  const url = buildUrl('/access-policies/health-worker');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const payload: AddHealthWorkerAccessPolicyDTO = {
+    healthUserId: accessRequest.healthUserId,
+    healthWorkerCi: accessRequest.healthWorker.ci,
+    clinicName: accessRequest.clinic.name,
+    accessRequestId: accessRequest.id,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  return response;
+};
+
+/**
+ * Deny an access request by deleting it
+ */
+export const denyAccessRequest = async (
+  accessRequestId: string
+): Promise<Response> => {
+  assertNonEmpty(accessRequestId, 'accessRequestId');
+
+  const url = buildUrl(`/access-requests/${accessRequestId}`);
+  const headers: Record<string, string> = {};
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers,
   });
 
   return response;

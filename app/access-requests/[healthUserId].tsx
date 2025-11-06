@@ -16,9 +16,11 @@ import { ThemedView } from "@/components/themed-view";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import {
-  actOnAccessRequest,
   ApiConfigurationError,
+  denyAccessRequest,
   fetchHealthUserAccessRequests,
+  grantClinicAccessPolicy,
+  grantHealthWorkerAccessPolicy,
 } from "@/lib/api";
 import type { AccessRequestDTO } from "@/types/AccessRequestDTO";
 
@@ -34,7 +36,6 @@ type ScreenState =
 type ActionType =
   | "grant-by-clinic"
   | "grant-by-health-worker"
-  | "grant-by-specialty"
   | "deny";
 
 const formatDateTime = (isoString: string) => {
@@ -131,11 +132,34 @@ export default function AccessRequestsForHealthUserScreen() {
     }
 
     try {
-      const response = await actOnAccessRequest(
-        selectedAction.requestId,
-        healthUserId,
-        selectedAction.type
+      // Find the access request
+      const accessRequest = state.data.find(
+        (request) => request.id === selectedAction.requestId
       );
+
+      if (!accessRequest) {
+        console.error("Access request not found");
+        closeModal();
+        return;
+      }
+
+      let response: Response;
+
+      switch (selectedAction.type) {
+        case "grant-by-clinic":
+          response = await grantClinicAccessPolicy(accessRequest);
+          break;
+        case "grant-by-health-worker":
+          response = await grantHealthWorkerAccessPolicy(accessRequest);
+          break;
+        case "deny":
+          response = await denyAccessRequest(accessRequest.id);
+          break;
+        default:
+          console.error("Unknown action type");
+          closeModal();
+          return;
+      }
 
       if (response.ok) {
         // Refresh the data
@@ -148,7 +172,7 @@ export default function AccessRequestsForHealthUserScreen() {
     } finally {
       closeModal();
     }
-  }, [selectedAction, healthUserId, loadData]);
+  }, [selectedAction, healthUserId, loadData, state.data]);
 
   useEffect(() => {
     loadData().catch(() => {
@@ -237,19 +261,15 @@ export default function AccessRequestsForHealthUserScreen() {
           >
             <View style={styles.cardHeader}>
               <ThemedText type="subtitle">
-                {request.healthWorkerName}
+                {request.healthWorker.firstName} {request.healthWorker.lastName}
               </ThemedText>
               <ThemedText style={styles.metaText}>
-                Solicitado {formatDateTime(request.createdAt)}
+                Solicitado {request.createdAt ? formatDateTime(request.createdAt) : 'Fecha no disponible'}
               </ThemedText>
             </View>
             <View style={styles.detailRow}>
               <ThemedText style={styles.detailLabel}>Clínica</ThemedText>
-              <ThemedText>{request.clinicName}</ThemedText>
-            </View>
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>Especialidad</ThemedText>
-              <ThemedText>{request.specialtyName}</ThemedText>
+              <ThemedText>{request.clinic.name}</ThemedText>
             </View>
             <Pressable
               style={styles.actionsToggle}
@@ -284,14 +304,6 @@ export default function AccessRequestsForHealthUserScreen() {
                   </ThemedText>
                 </Pressable>
                 <Pressable
-                  style={[styles.actionButton, styles.actionButtonTertiary]}
-                  onPress={() => openModal("grant-by-specialty", request.id)}
-                >
-                  <ThemedText style={styles.actionButtonText}>
-                    Otorgar acceso a la especialidad
-                  </ThemedText>
-                </Pressable>
-                <Pressable
                   style={[styles.actionButton, styles.actionButtonDeny]}
                   onPress={() => openModal("deny", request.id)}
                 >
@@ -308,14 +320,12 @@ export default function AccessRequestsForHealthUserScreen() {
                   }
                   body={
                     selectedAction?.type === "deny"
-                      ? `¿Estás seguro que quieres denegar acceso a ${request.healthWorkerName} a tu historia clínica?`
+                      ? `¿Estás seguro que quieres denegar acceso a ${request.healthWorker.firstName} ${request.healthWorker.lastName} a tu historia clínica?`
                       : `¿Estás seguro que quieres otorgar acceso a ${
                           selectedAction?.type === "grant-by-clinic"
-                            ? request.clinicName
+                            ? request.clinic.name
                             : selectedAction?.type === "grant-by-health-worker"
-                            ? request.healthWorkerName
-                            : selectedAction?.type === "grant-by-specialty"
-                            ? request.specialtyName
+                            ? `${request.healthWorker.firstName} ${request.healthWorker.lastName}`
                             : ""
                         } a tu historia clínica?`
                   }
