@@ -7,6 +7,7 @@ import { HelloWave } from "@/components/hello-wave";
 import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { UserProfile } from "@/components/user-profile";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export default function HomeScreen() {
@@ -42,6 +43,10 @@ export default function HomeScreen() {
         <ThemedText type="title">Health Access Portal</ThemedText>
         <HelloWave />
       </ThemedView>
+
+      {/* User Profile Section */}
+      <UserProfile />
+
       <ThemedView style={styles.formContainer}>
         <ThemedText type="subtitle">Health User ID</ThemedText>
         <TextInput
