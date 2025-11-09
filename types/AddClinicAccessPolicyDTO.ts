@@ -1,5 +1,5 @@
 export interface AddClinicAccessPolicyDTO {
-  healthUserId: string;
+  healthUserCi: string;
   clinicName: string;
   accessRequestId: string;
 }

@@ -228,7 +228,7 @@ export const grantClinicAccessPolicy = async (
   accessRequest: AccessRequestDTO
 ): Promise<Response> => {
   assertNonEmpty(accessRequest.id, 'accessRequestId');
-  assertNonEmpty(accessRequest.healthUserId, 'healthUserId');
+  assertNonEmpty(accessRequest.healthUserCi, 'healthUserCi');
   assertNonEmpty(accessRequest.clinic.name, 'clinicName');
 
   const url = buildUrl('/access-policies/clinic');
@@ -243,7 +243,7 @@ export const grantClinicAccessPolicy = async (
   }
 
   const payload: AddClinicAccessPolicyDTO = {
-    healthUserId: accessRequest.healthUserId,
+    healthUserCi: accessRequest.healthUserCi,
     clinicName: accessRequest.clinic.name,
     accessRequestId: accessRequest.id,
   };
@@ -264,7 +264,6 @@ export const grantHealthWorkerAccessPolicy = async (
   accessRequest: AccessRequestDTO
 ): Promise<Response> => {
   assertNonEmpty(accessRequest.id, 'accessRequestId');
-  assertNonEmpty(accessRequest.healthUserId, 'healthUserId');
   assertNonEmpty(accessRequest.healthWorker.ci, 'healthWorkerCi');
   assertNonEmpty(accessRequest.clinic.name, 'clinicName');
 
@@ -280,7 +279,7 @@ export const grantHealthWorkerAccessPolicy = async (
   }
 
   const payload: AddHealthWorkerAccessPolicyDTO = {
-    healthUserId: accessRequest.healthUserId,
+    healthUserCi: accessRequest.healthUserCi,
     healthWorkerCi: accessRequest.healthWorker.ci,
     clinicName: accessRequest.clinic.name,
     accessRequestId: accessRequest.id,
