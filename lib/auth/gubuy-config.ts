@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 
 export interface GubuyConfig {
   clientId: string;
+  clientSecret?: string;
   redirectUri: string;
   authorizeUrl: string;
   tokenUrl: string;
@@ -28,6 +29,7 @@ function getEnv(name: string, defaultValue?: string): string | undefined {
 export function getGubuyConfig(): GubuyConfig {
   return {
     clientId: requireEnv('EXPO_PUBLIC_OIDC_CLIENT_ID'),
+    clientSecret: getEnv('EXPO_PUBLIC_OIDC_CLIENT_SECRET'),
     redirectUri: requireEnv('EXPO_PUBLIC_OIDC_REDIRECT_URI'),
     authorizeUrl: requireEnv('EXPO_PUBLIC_OIDC_AUTHORIZE_URL'),
     tokenUrl: requireEnv('EXPO_PUBLIC_OIDC_TOKEN_URL'),

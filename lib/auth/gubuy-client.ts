@@ -1,18 +1,19 @@
 import type { PortalSession, TokenResponse, UserInfo } from '@/lib/types';
+import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { GUBUY_CONFIG } from './gubuy-config';
 import { generateCodeChallenge, generateRandomString } from './pkce';
 import {
-    cleanupOAuthStorage,
-    clearSession,
-    getAndClearCodeVerifier,
-    getAndClearNonce,
-    getAndClearOAuthState,
-    getSession,
-    storeCodeVerifier,
-    storeNonce,
-    storeOAuthState,
-    storeSession,
+  cleanupOAuthStorage,
+  clearSession,
+  getAndClearCodeVerifier,
+  getAndClearNonce,
+  getAndClearOAuthState,
+  getSession,
+  storeCodeVerifier,
+  storeNonce,
+  storeOAuthState,
+  storeSession,
 } from './session-manager';
 import { verifyIdToken } from './token-validator';
 
@@ -45,26 +46,83 @@ export async function initiateLogin(): Promise<PortalSession> {
       redirectUri,
     });
 
-    console.log('Opening authorization URL:', authUrl);
-    console.log('Redirect URI:', redirectUri);
-
     // 4. Open browser for authentication
-    // The browser will be redirected to localhost:8080/callback
-    // The callback server will then redirect to portalusuariosmobile://callback
+    // Set up a promise to capture the deep link callback
+    let callbackResolver: ((url: string) => void) | null = null;
+    let callbackRejector: ((error: Error) => void) | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let subscription: any = null;
+    
+    const callbackPromise = new Promise<string>((resolve, reject) => {
+      callbackResolver = resolve;
+      callbackRejector = reject;
+    });
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (subscription) {
+        subscription.remove();
+        subscription = null;
+      }
+      callbackResolver = null;
+      callbackRejector = null;
+    };
+
+    timeoutId = setTimeout(() => {
+      if (callbackRejector) {
+        cleanup();
+        callbackRejector(new Error('Authentication timeout - no callback received'));
+      }
+    }, 300000); // 5 minute timeout
+
+    subscription = Linking.addEventListener('url', (event) => {
+      if (event.url.startsWith('portalusuariosmobileg12://')) {
+        console.log('Deep link matches app scheme, resolving...');
+        if (callbackResolver) {
+          const url = event.url;
+          const resolver = callbackResolver;
+          cleanup();
+          resolver(url);
+        }
+      }
+    });
+
+
+    // Open the browser
     const result = await WebBrowser.openAuthSessionAsync(
       authUrl, 
-      'portalusuariosmobile://'
+      'portalusuariosmobileg12://auth/callback'
     );
 
+    // On Android, the browser may return 'dismiss' but the deep link still works
     if (result.type === 'success' && result.url) {
-      console.log('Received callback URL:', result.url);
+      cleanup();
       return await handleCallback(result.url);
     }
 
     if (result.type === 'cancel') {
+      cleanup();
       await cleanupOAuthStorage();
       throw new Error('Authentication cancelled by user');
     }
+
+    if (result.type === 'dismiss') {
+      // Wait for the deep link callback
+      try {
+        const callbackUrl = await callbackPromise;
+        const session = await handleCallback(callbackUrl);
+        return session;
+      } catch (error) {
+        cleanup();
+        await cleanupOAuthStorage();
+        throw error;
+      }
+    }
+
+    cleanup();
 
     throw new Error(`Authentication failed: ${result.type}`);
   } catch (error) {
@@ -159,9 +217,10 @@ async function pollForCallbackData(): Promise<PortalSession> {
 /**
  * Handle OAuth callback after user authentication
  */
-async function handleCallback(callbackUrl: string): Promise<PortalSession> {
+async function handleCallback(callbackUrl: string): Promise<PortalSession> {  
   try {
     const params = parseCallbackUrl(callbackUrl);
+    console.log('Parsed callback params:', params);
 
     // 1. Check for errors
     if (params.error) {
@@ -176,6 +235,7 @@ async function handleCallback(callbackUrl: string): Promise<PortalSession> {
 
     // 2. Validate state (CSRF protection)
     const storedState = await getAndClearOAuthState();
+    console.log('State validation:', { received: params.state, stored: storedState });
     if (!storedState || params.state !== storedState) {
       throw new Error('Invalid state parameter - possible CSRF attack');
     }
@@ -207,7 +267,6 @@ async function handleCallback(callbackUrl: string): Promise<PortalSession> {
     // 8. Clean up temporary storage
     await cleanupOAuthStorage();
 
-    console.log('Authentication successful');
     return session;
   } catch (error) {
     await cleanupOAuthStorage();
@@ -220,14 +279,27 @@ async function handleCallback(callbackUrl: string): Promise<PortalSession> {
  * Parse OAuth callback URL parameters
  */
 function parseCallbackUrl(url: string): Record<string, string> {
-  const urlObj = new URL(url);
-  const params: Record<string, string> = {};
+  console.log('parseCallbackUrl called with:', url);
+  
+  // Normalize URL: fix multiple slashes after scheme
+  // portalusuariosmobileg12:////auth/callback -> portalusuariosmobileg12://auth/callback
+  const normalizedUrl = url.replace(/^([a-z]+):(\/+)/, '$1://');
+  console.log('Normalized URL:', normalizedUrl);
+  
+  try {
+    const urlObj = new URL(normalizedUrl);
+    const params: Record<string, string> = {};
 
-  urlObj.searchParams.forEach((value, key) => {
-    params[key] = value;
-  });
+    urlObj.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
 
-  return params;
+    console.log('Parsed params:', params);
+    return params;
+  } catch (error) {
+    console.error('Failed to parse URL:', error);
+    throw new Error(`Invalid callback URL: ${url}`);
+  }
 }
 
 /**
@@ -244,17 +316,31 @@ async function exchangeAuthorizationCode(
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,
-    client_id: GUBUY_CONFIG.clientId,
     code_verifier: codeVerifier,
   });
 
-  // Note: Mobile apps are public clients and should NOT send client_secret
+  // For confidential clients, use Basic auth
+  let headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  if (GUBUY_CONFIG.clientSecret) {
+    const credentials = btoa(`${GUBUY_CONFIG.clientId}:${GUBUY_CONFIG.clientSecret}`);
+    headers['Authorization'] = `Basic ${credentials}`;
+  } else {
+    // For public clients, include client_id in body
+    body.append('client_id', GUBUY_CONFIG.clientId);
+  }
+
+  console.log('Token exchange request:', {
+    url: GUBUY_CONFIG.tokenUrl,
+    headers,
+    body: body.toString(),
+  });
 
   const response = await fetch(GUBUY_CONFIG.tokenUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers,
     body: body.toString(),
   });
 
@@ -265,6 +351,12 @@ async function exchangeAuthorizationCode(
 
   if (!response.ok || json.error) {
     const errorMessage = json.error_description || json.error || response.statusText;
+    console.error('Token exchange failed:', {
+      status: response.status,
+      error: json.error,
+      error_description: json.error_description,
+      full_response: json,
+    });
     throw new Error(`Token exchange failed: ${errorMessage}`);
   }
 
@@ -281,25 +373,33 @@ async function exchangeAuthorizationCode(
 async function fetchUserInfo(
   accessToken: string | undefined
 ): Promise<UserInfo | null> {
+  console.log('fetchUserInfo called with accessToken:', accessToken ? 'present' : 'missing');
+  
   if (!accessToken) {
+    console.warn('No access token provided, skipping user info fetch');
     return null;
   }
 
   try {
+    console.log('Fetching user info from:', GUBUY_CONFIG.userinfoUrl);
     const response = await fetch(GUBUY_CONFIG.userinfoUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
 
+    console.log('User info response status:', response.status);
+
     if (!response.ok) {
       console.warn('Failed to fetch user info:', response.statusText);
       return null;
     }
 
-    return (await response.json()) as UserInfo;
+    const userInfo = (await response.json()) as UserInfo;
+    console.log('User info fetched successfully:', userInfo);
+    return userInfo;
   } catch (error) {
-    console.warn('Failed to fetch user info:', error);
+    console.error('Error fetching user info:', error);
     return null;
   }
 }
@@ -312,6 +412,12 @@ function createSession(
   userInfo: UserInfo | null,
   tokens: TokenResponse
 ): PortalSession {
+  console.log('createSession called with:', {
+    tokenClaims,
+    userInfo,
+    hasTokens: !!tokens,
+  });
+
   // Extract document number with fallbacks
   const documentNumber =
     (userInfo?.numero_documento as string) ||
@@ -319,6 +425,8 @@ function createSession(
     (tokenClaims.uid as string) ||
     (tokenClaims.sub as string) ||
     'unknown';
+  
+  console.log('Extracted document number:', documentNumber);
 
   // Extract full name with fallbacks
   const fullName =

@@ -25,7 +25,7 @@ app.get('/callback', (req, res) => {
   console.log('OAuth callback received:', { code, state, error, error_description });
 
   // Build the deep link URL for the mobile app
-  const appScheme = 'portalusuariosmobile://callback';
+  const appScheme = 'portalusuariosmobileg12://auth/callback';
   
   if (error) {
     // Store error for polling fallback
