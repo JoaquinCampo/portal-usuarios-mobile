@@ -1,4 +1,3 @@
-import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +21,7 @@ import {
   grantClinicAccessPolicy,
   grantHealthWorkerAccessPolicy,
 } from "@/lib/api";
+import { getSession } from "@/lib/auth/session-manager";
 import type { AccessRequestDTO } from "@/types/AccessRequestDTO";
 
 type ScreenState =
@@ -40,18 +40,13 @@ type ActionType =
 
 const formatDateTime = (isoString: string) => {
   const date = new Date(isoString);
-  return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString("es-UY");
 };
 
-export default function AccessRequestsForHealthUserScreen() {
+export default function AccessRequestsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const { healthUserId: rawHealthUserId } = useLocalSearchParams<{
-    healthUserId?: string | string[];
-  }>();
-  const healthUserId = Array.isArray(rawHealthUserId)
-    ? rawHealthUserId[0]
-    : rawHealthUserId;
+  const [healthUserId, setHealthUserId] = useState<string | null>(null);
   const {
     token: notificationToken,
     error: notificationError,
@@ -91,15 +86,35 @@ export default function AccessRequestsForHealthUserScreen() {
     setSelectedAction(null);
   }
 
+  // Load healthUserId from session
+  useEffect(() => {
+    const loadHealthUserId = async () => {
+      try {
+        const session = await getSession();
+        if (session?.healthUser?.id) {
+          setHealthUserId(session.healthUser.id);
+        } else {
+          setState({
+            status: "error",
+            data: [],
+            error: "No se pudo obtener el ID de usuario de la sesión.",
+          });
+        }
+      } catch (error) {
+        console.error("Error loading session:", error);
+        setState({
+          status: "error",
+          data: [],
+          error: "Error al cargar la sesión.",
+        });
+      }
+    };
+
+    loadHealthUserId();
+  }, []);
+
   const loadData = useCallback(async () => {
     if (!healthUserId) {
-      setExpandedRequestId(null);
-      setState({
-        status: "error",
-        data: [],
-        error:
-          "Falta el ID de usuario de salud. Agrégalo a la ruta como /access-requests/by-id/<health-user-id>.",
-      });
       return;
     }
 
@@ -175,10 +190,12 @@ export default function AccessRequestsForHealthUserScreen() {
   }, [selectedAction, healthUserId, loadData, state.data]);
 
   useEffect(() => {
-    loadData().catch(() => {
-      // Error is handled through state.
-    });
-  }, [loadData]);
+    if (healthUserId) {
+      loadData().catch(() => {
+        // Error is handled through state.
+      });
+    }
+  }, [loadData, healthUserId]);
 
   const isRefreshing = state.status === "loading";
 
@@ -197,7 +214,7 @@ export default function AccessRequestsForHealthUserScreen() {
         ]}
       >
         <View style={styles.header}>
-          <ThemedText type="title">Solicitudes de Acceso</ThemedText>
+          <ThemedText type="title" style={{ fontSize: 24 }}>Solicitudes de Acceso</ThemedText>
         </View>
 
         {!notificationsReady || notificationError ? (
@@ -247,9 +264,7 @@ export default function AccessRequestsForHealthUserScreen() {
               No se encontraron solicitudes de acceso
             </ThemedText>
             <ThemedText>
-              El servidor devolvió un resultado vacío para este usuario de
-              salud. Intenta deslizar para actualizar o confirma que el ID es
-              correcto.
+              No tienes solicitudes pendientes en este momento.
             </ThemedText>
           </View>
         ) : null}
@@ -350,11 +365,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    paddingTop: 50,
     padding: 16,
     gap: 16,
   },
   header: {
     gap: 4,
+    marginBottom: 8,
+    backgroundColor: '#0d47a1',
+    padding: 16,
+    borderRadius: 12,
   },
   card: {
     borderRadius: 12,
@@ -404,9 +424,6 @@ const styles = StyleSheet.create({
   },
   actionButtonSecondary: {
     backgroundColor: "#0f766e",
-  },
-  actionButtonTertiary: {
-    backgroundColor: "#7c3aed",
   },
   actionButtonDeny: {
     backgroundColor: "#dc2626",

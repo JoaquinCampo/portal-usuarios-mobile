@@ -1,119 +1,259 @@
-import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, TextInput } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 
-import { HelloWave } from "@/components/hello-wave";
-import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { UserProfile } from "@/components/user-profile";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { logout } from "@/lib/auth/gubuy-client";
+import { getSession } from "@/lib/auth/session-manager";
+import type { PortalSession } from "@/lib/types";
 
-export default function HomeScreen() {
-  const [healthUserId, setHealthUserId] = useState("");
+export default function ProfileScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const trimmedId = healthUserId.trim();
-  const canNavigate = trimmedId.length > 0;
+  const [session, setSession] = useState<PortalSession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleNavigate = () => {
-    if (!canNavigate) {
-      return;
+  const loadSession = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const currentSession = await getSession();
+      setSession(currentSession);
+    } catch (error) {
+      console.error("Error loading session:", error);
+      setSession(null);
+    } finally {
+      setIsLoading(false);
     }
+  }, []);
 
-    router.push({
-      pathname: "/access-requests/[healthUserId]",
-      params: { healthUserId: trimmedId },
-    });
-  };
+  const handleLogout = useCallback(async () => {
+    Alert.alert(
+      "Cerrar sesión",
+      "¿Estás seguro que deseas cerrar sesión?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+        {
+          text: "Cerrar sesión",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLoggingOut(true);
+              await logout();
+              router.replace("/(auth)/login");
+            } catch (error) {
+              console.error("Error logging out:", error);
+              Alert.alert(
+                "Error",
+                "No se pudo cerrar sesión. Por favor intenta nuevamente."
+              );
+            } finally {
+              setIsLoggingOut(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSession();
+    }, [loadSession])
+  );
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.screen}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator
+            size="large"
+            color={isDark ? "#ffffff" : "#000000"}
+          />
+          <ThemedText style={styles.loadingText}>Cargando perfil...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!session) {
+    return (
+      <ThemedView style={styles.screen}>
+        <View style={styles.centerContent}>
+          <ThemedText type="title">No hay sesión activa</ThemedText>
+          <Pressable
+            style={styles.button}
+            onPress={() => router.replace("/(auth)/login")}
+          >
+            <ThemedText style={styles.buttonText}>Iniciar sesión</ThemedText>
+          </Pressable>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: "#A1CEDC", dark: "#1D3D47" }}
-      headerImage={
-        <Image
-          source={require("@/assets/images/partial-react-logo.png")}
-          style={styles.reactLogo}
-        />
-      }
-    >
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Health Access Portal</ThemedText>
-        <HelloWave />
-      </ThemedView>
+    <ThemedView style={styles.screen}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.content}
+      >
+        <ThemedView style={styles.header}>
+          <ThemedText type="title" style={{ fontSize: 24 }}>Mi Perfil</ThemedText>
+        </ThemedView>
 
-      {/* User Profile Section */}
-      <UserProfile />
-
-      <ThemedView style={styles.formContainer}>
-        <ThemedText type="subtitle">Health User ID</ThemedText>
-        <TextInput
-          value={healthUserId}
-          onChangeText={setHealthUserId}
-          placeholder="e.g. 123456"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={[styles.input, isDark && styles.inputDark]}
-          returnKeyType="go"
-          onSubmitEditing={handleNavigate}
-          placeholderTextColor={isDark ? "#9aa4b2" : "#667085"}
-          cursorColor={isDark ? "#e2e8f0" : "#0a7ea4"}
-          selectionColor={isDark ? "#0a7ea4" : "#0a7ea4"}
-        />
-        <Pressable
-          onPress={handleNavigate}
-          style={[styles.button, !canNavigate && styles.buttonDisabled]}
-          disabled={!canNavigate}
+        {/* User Information Card */}
+        <View
+          style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
         >
-          <ThemedText type="defaultSemiBold" style={styles.buttonText}>
-            Open access requests
-          </ThemedText>
+          <ThemedText type="subtitle">Información Personal</ThemedText>
+
+          <View style={styles.infoRow}>
+            <ThemedText style={styles.label}>Nombre:</ThemedText>
+            <ThemedText style={styles.value}>
+              {session.healthUser.name}
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoRow}>
+            <ThemedText style={styles.label}>Cédula de Identidad:</ThemedText>
+            <ThemedText style={styles.value}>
+              {session.healthUser.id}
+            </ThemedText>
+          </View>
+
+          {session.attributes?.email && (
+            <View style={styles.infoRow}>
+              <ThemedText style={styles.label}>Email:</ThemedText>
+              <ThemedText style={styles.value}>
+                {session.attributes.email}
+              </ThemedText>
+            </View>
+          )}
+        </View>
+
+        {/* Authentication Information Card */}
+        <View
+          style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
+        >
+          <ThemedText type="subtitle">Información de Autenticación</ThemedText>
+
+          <View style={styles.infoRow}>
+            <ThemedText style={styles.label}>Proveedor:</ThemedText>
+            <ThemedText style={styles.value}>
+              {session.attributes?.idp || session.access.source}
+            </ThemedText>
+          </View>
+
+          {session.attributes?.issuer && (
+            <View style={styles.infoRow}>
+              <ThemedText style={styles.label}>Emisor:</ThemedText>
+              <ThemedText style={styles.value} numberOfLines={2}>
+                {session.attributes.issuer}
+              </ThemedText>
+            </View>
+          )}
+
+          {session.issuedAt && (
+            <View style={styles.infoRow}>
+              <ThemedText style={styles.label}>Sesión iniciada:</ThemedText>
+              <ThemedText style={styles.value}>
+                {new Date(session.issuedAt).toLocaleString("es-UY")}
+              </ThemedText>
+            </View>
+          )}
+
+          {session.tokens?.expiresAt && (
+            <View style={styles.infoRow}>
+              <ThemedText style={styles.label}>Expira:</ThemedText>
+              <ThemedText style={styles.value}>
+                {new Date(session.tokens.expiresAt).toLocaleString("es-UY")}
+              </ThemedText>
+            </View>
+          )}
+        </View>
+
+        {/* Logout Button */}
+        <Pressable
+          style={[styles.logoutButton, isLoggingOut && styles.buttonDisabled]}
+          onPress={handleLogout}
+          disabled={isLoggingOut}
+        >
+          {isLoggingOut ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <ThemedText style={styles.logoutButtonText}>
+              Cerrar sesión
+            </ThemedText>
+          )}
         </Pressable>
-      </ThemedView>
-    </ParallaxScrollView>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: "row",
+  screen: {
+    flex: 1,
+  },
+  content: {
+    padding: 16,
+    paddingTop: 50,
+    gap: 16,
+    backgroundColor: '#121212',
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 8,
+    gap: 16,
+    padding: 16,
   },
-  introContainer: {
-    gap: 8,
+  header: {
+    gap: 4,
     marginBottom: 8,
-  },
-  formContainer: {
-    gap: 12,
-    marginBottom: 12,
-  },
-  noteContainer: {
-    gap: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-  },
-  input: {
+    backgroundColor: '#0d47a1',
+    padding: 16,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#d0d5dd",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: "#ffffff",
-    color: "#101828",
   },
-  inputDark: {
-    backgroundColor: "#1f2933",
-    borderColor: "#334155",
-    color: "#e2e8f0",
+  loadingText: {
+    marginTop: 8,
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  cardLight: {
+    backgroundColor: "#f0f3f5",
+  },
+  cardDark: {
+    backgroundColor: "#1e1e1e",
+  },
+  infoRow: {
+    gap: 4,
+  },
+  label: {
+    fontWeight: "600",
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  value: {
+    fontSize: 16,
   },
   button: {
     borderRadius: 12,
@@ -126,5 +266,16 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: "#ffffff",
+  },
+  logoutButton: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: "#dc2626",
+    marginTop: 8,
+  },
+  logoutButtonText: {
+    color: "#ffffff",
+    fontWeight: "600",
   },
 });
