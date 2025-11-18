@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import ChoiceModal from "@/app/modal";
+import SpecialtySelectionModal from "@/app/specialty-selection-modal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -126,14 +127,36 @@ export default function AccessRequestsScreen() {
     requestId: string;
     specialtyName?: string;
   } | null>(null);
+  const [specialtySelectionRequestId, setSpecialtySelectionRequestId] = useState<string | null>(null);
   const isChoiceModalVisible = selectedAction !== null;
+  const isSpecialtySelectionVisible = specialtySelectionRequestId !== null;
 
   function openModal(action: ActionType, requestId: string, specialtyName?: string) {
-    setSelectedAction({ type: action, requestId, specialtyName });
+    if (action === "grant-by-specialty" && !specialtyName) {
+      // Show specialty selection modal first
+      setSpecialtySelectionRequestId(requestId);
+    } else {
+      setSelectedAction({ type: action, requestId, specialtyName });
+    }
   }
 
   function closeModal() {
     setSelectedAction(null);
+  }
+
+  function closeSpecialtySelection() {
+    setSpecialtySelectionRequestId(null);
+  }
+
+  function handleSpecialtySelection(specialty: string) {
+    if (specialtySelectionRequestId) {
+      setSelectedAction({
+        type: "grant-by-specialty",
+        requestId: specialtySelectionRequestId,
+        specialtyName: specialty,
+      });
+      setSpecialtySelectionRequestId(null);
+    }
   }
 
   // Load healthUserId from session
@@ -258,6 +281,9 @@ export default function AccessRequestsScreen() {
   const selectedRequest = selectedAction
     ? state.data.find((request) => request.id === selectedAction.requestId) ?? null
     : null;
+  const specialtySelectionRequest = specialtySelectionRequestId
+    ? state.data.find((request) => request.id === specialtySelectionRequestId) ?? null
+    : null;
 
   return (
     <AccessRequestsLayout
@@ -277,6 +303,10 @@ export default function AccessRequestsScreen() {
       selectedRequest={selectedRequest}
       closeModal={closeModal}
       handleAction={handleAction}
+      isSpecialtySelectionVisible={isSpecialtySelectionVisible}
+      specialtySelectionRequest={specialtySelectionRequest}
+      closeSpecialtySelection={closeSpecialtySelection}
+      handleSpecialtySelection={handleSpecialtySelection}
     />
   );
 }
@@ -298,6 +328,10 @@ type AccessRequestsLayoutProps = {
   selectedRequest: AccessRequestDTO | null;
   closeModal: () => void;
   handleAction: () => Promise<void> | void;
+  isSpecialtySelectionVisible: boolean;
+  specialtySelectionRequest: AccessRequestDTO | null;
+  closeSpecialtySelection: () => void;
+  handleSpecialtySelection: (specialty: string) => void;
 };
 
 function AccessRequestsLayout({
@@ -317,6 +351,10 @@ function AccessRequestsLayout({
   selectedRequest,
   closeModal,
   handleAction,
+  isSpecialtySelectionVisible,
+  specialtySelectionRequest,
+  closeSpecialtySelection,
+  handleSpecialtySelection,
 }: AccessRequestsLayoutProps) {
   return (
     <ThemedView style={styles.screen}>
@@ -359,6 +397,12 @@ function AccessRequestsLayout({
             openModal={openModal}
           />
         ))}
+        <SpecialtySelectionModal
+          isVisible={isSpecialtySelectionVisible && !!specialtySelectionRequest}
+          specialties={specialtySelectionRequest?.specialtyNames ?? []}
+          onSelect={handleSpecialtySelection}
+          onCancel={closeSpecialtySelection}
+        />
         <ChoiceModal
           isVisible={isChoiceModalVisible && !!selectedAction && !!selectedRequest}
           title={buildModalTitle(selectedAction?.type)}
@@ -523,17 +567,16 @@ function AccessRequestCard({
               </ThemedText>
             </Pressable>
           ) : null}
-          {request.specialtyNames?.map((specialty) => (
+          {request.specialtyNames && request.specialtyNames.length > 0 ? (
             <Pressable
-              key={`${request.id}-${specialty}-grant`}
               style={[styles.actionButton, styles.actionButtonTertiary]}
-              onPress={() => openModal("grant-by-specialty", request.id, specialty)}
+              onPress={() => openModal("grant-by-specialty", request.id)}
             >
               <ThemedText style={styles.actionButtonText}>
-                Otorgar acceso a {specialty}
+                Otorgar acceso por especialidad
               </ThemedText>
             </Pressable>
-          ))}
+          ) : null}
           <Pressable
             style={[styles.actionButton, styles.actionButtonDeny]}
             onPress={() => openModal("deny", request.id)}
