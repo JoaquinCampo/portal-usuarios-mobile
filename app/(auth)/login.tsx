@@ -1,4 +1,4 @@
-import { initiateLogin } from '@/lib/auth';
+import { getSession, initiateLogin } from '@/lib/auth';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -11,7 +11,12 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await initiateLogin();
-      
+
+      const session = await getSession();
+      if (!session) {
+        throw new Error('No session found after login');
+      }
+
       // Navigation will be handled by _layout.tsx after successful authentication
       router.replace('/(tabs)');
     } catch (error) {
@@ -51,9 +56,7 @@ export default function LoginScreen() {
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
-              <Text style={styles.loginButtonText}>🇺🇾 Iniciar sesión con GUB.UY</Text>
-            </>
+            <Text style={styles.loginButtonText}>🇺🇾 Iniciar sesión con GUB.UY</Text>
           )}
         </Pressable>
 

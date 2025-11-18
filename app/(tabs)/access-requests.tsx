@@ -20,6 +20,7 @@ import {
   fetchHealthUserAccessRequests,
   grantClinicAccessPolicy,
   grantHealthWorkerAccessPolicy,
+  grantSpecialtyAccessPolicy,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth/session-manager";
 import type { AccessRequestDTO } from "@/types/AccessRequestDTO";
@@ -36,12 +37,60 @@ type ScreenState =
 type ActionType =
   | "grant-by-clinic"
   | "grant-by-health-worker"
+  | "grant-by-specialty"
   | "deny";
 
 const formatDateTime = (isoString: string) => {
   const date = new Date(isoString);
   return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString("es-UY");
 };
+
+const formatAccessRequestsError = (error: unknown): string => {
+  if (error instanceof ApiConfigurationError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Error inesperado al obtener las solicitudes de acceso.";
+};
+
+const buildModalTitle = (action: ActionType | undefined) =>
+  action === "deny"
+    ? "Denegar acceso a historia clínica"
+    : "Otorgar acceso a historia clínica";
+
+const buildModalBody = (
+  action: { type: ActionType; specialtyName?: string } | null,
+  request: AccessRequestDTO | null
+) => {
+  if (!action || !request) {
+    return "";
+  }
+
+  const workerName = request.healthWorker
+    ? `${request.healthWorker.firstName} ${request.healthWorker.lastName}`.trim()
+    : "el profesional";
+  const clinicName = request.clinic?.name ?? "la clínica";
+
+  switch (action.type) {
+    case "deny":
+      return `¿Estás seguro que quieres denegar acceso a ${workerName} a tu historia clínica?`;
+    case "grant-by-clinic":
+      return `¿Estás seguro que quieres otorgar acceso a ${clinicName} a tu historia clínica?`;
+    case "grant-by-health-worker":
+      return `¿Estás seguro que quieres otorgar acceso a ${workerName} a tu historia clínica?`;
+    case "grant-by-specialty":
+      return `¿Estás seguro que quieres otorgar acceso a la especialidad ${action.specialtyName}?`;
+    default:
+      return "";
+  }
+};
+
+const buildConfirmText = (action: ActionType | undefined) =>
+  action === "deny" ? "Rechazar" : "Aceptar";
 
 export default function AccessRequestsScreen() {
   const colorScheme = useColorScheme();
@@ -75,11 +124,12 @@ export default function AccessRequestsScreen() {
   const [selectedAction, setSelectedAction] = useState<{
     type: ActionType;
     requestId: string;
+    specialtyName?: string;
   } | null>(null);
   const isChoiceModalVisible = selectedAction !== null;
 
-  function openModal(action: ActionType, requestId: string) {
-    setSelectedAction({ type: action, requestId });
+  function openModal(action: ActionType, requestId: string, specialtyName?: string) {
+    setSelectedAction({ type: action, requestId, specialtyName });
   }
 
   function closeModal() {
@@ -126,12 +176,7 @@ export default function AccessRequestsScreen() {
       setState({ status: "ready", data, error: null });
     } catch (error) {
       setExpandedRequestId(null);
-      const message =
-        error instanceof ApiConfigurationError
-          ? error.message
-          : error instanceof Error
-          ? error.message
-          : "Error inesperado al obtener las solicitudes de acceso.";
+      const message = formatAccessRequestsError(error);
 
       setState({
         status: "error",
@@ -165,7 +210,19 @@ export default function AccessRequestsScreen() {
           response = await grantClinicAccessPolicy(accessRequest);
           break;
         case "grant-by-health-worker":
+          if (!accessRequest.healthWorker?.ci) {
+            throw new Error("La solicitud no contiene profesional");
+          }
           response = await grantHealthWorkerAccessPolicy(accessRequest);
+          break;
+        case "grant-by-specialty":
+          if (!selectedAction.specialtyName) {
+            throw new Error("Falta seleccionar una especialidad");
+          }
+          response = await grantSpecialtyAccessPolicy(
+            accessRequest,
+            selectedAction.specialtyName
+          );
           break;
         case "deny":
           response = await denyAccessRequest(accessRequest.id);
@@ -198,7 +255,69 @@ export default function AccessRequestsScreen() {
   }, [loadData, healthUserId]);
 
   const isRefreshing = state.status === "loading";
+  const selectedRequest = selectedAction
+    ? state.data.find((request) => request.id === selectedAction.requestId) ?? null
+    : null;
 
+  return (
+    <AccessRequestsLayout
+      isDark={isDark}
+      state={state}
+      windowHeight={window.height}
+      notificationsReady={notificationsReady}
+      notificationError={notificationError}
+      isRegisteringNotification={isRegisteringNotification}
+      loadData={loadData}
+      isRefreshing={isRefreshing}
+      expandedRequestId={expandedRequestId}
+      toggleActions={toggleActions}
+      openModal={openModal}
+      isChoiceModalVisible={isChoiceModalVisible}
+      selectedAction={selectedAction}
+      selectedRequest={selectedRequest}
+      closeModal={closeModal}
+      handleAction={handleAction}
+    />
+  );
+}
+
+type AccessRequestsLayoutProps = {
+  isDark: boolean;
+  state: ScreenState;
+  windowHeight: number;
+  notificationsReady: boolean;
+  notificationError?: string | null;
+  isRegisteringNotification: boolean;
+  loadData: () => Promise<void>;
+  isRefreshing: boolean;
+  expandedRequestId: string | null;
+  toggleActions: (id: string) => void;
+  openModal: (action: ActionType, id: string, specialtyName?: string) => void;
+  isChoiceModalVisible: boolean;
+  selectedAction: { type: ActionType; requestId: string; specialtyName?: string } | null;
+  selectedRequest: AccessRequestDTO | null;
+  closeModal: () => void;
+  handleAction: () => Promise<void> | void;
+};
+
+function AccessRequestsLayout({
+  isDark,
+  state,
+  windowHeight,
+  notificationsReady,
+  notificationError,
+  isRegisteringNotification,
+  loadData,
+  isRefreshing,
+  expandedRequestId,
+  toggleActions,
+  openModal,
+  isChoiceModalVisible,
+  selectedAction,
+  selectedRequest,
+  closeModal,
+  handleAction,
+}: AccessRequestsLayoutProps) {
   return (
     <ThemedView style={styles.screen}>
       <ScrollView
@@ -209,7 +328,7 @@ export default function AccessRequestsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            minHeight: window.height,
+            minHeight: windowHeight,
           },
         ]}
       >
@@ -217,146 +336,215 @@ export default function AccessRequestsScreen() {
           <ThemedText type="title" style={{ fontSize: 24 }}>Solicitudes de Acceso</ThemedText>
         </View>
 
-        {!notificationsReady || notificationError ? (
-          <View
-            style={[
-              styles.card,
-              isDark ? styles.cardDark : styles.cardLight,
-              styles.infoCard,
-            ]}
-          >
-            <ThemedText type="subtitle">Notificaciones push</ThemedText>
-            {notificationError ? (
-              <ThemedText style={styles.errorText}>
-                {notificationError}
-              </ThemedText>
-            ) : (
-              <ThemedText>
-                {isRegisteringNotification
-                  ? "Registrando este dispositivo para notificaciones…"
-                  : "Las notificaciones aún no están activas. Confirma los permisos y la configuración nativa de Firebase."}
-              </ThemedText>
-            )}
-          </View>
-        ) : null}
+        {renderNotificationsCard(
+          notificationsReady,
+          notificationError,
+          isRegisteringNotification,
+          isDark
+        )}
 
-        {state.status === "loading" && state.data.length === 0 ? (
-          <ActivityIndicator
-            size="large"
-            color={isDark ? "#ffffff" : "#000000"}
+        {renderLoadingIndicator(state, isDark)}
+
+        {renderErrorCard(state, isDark)}
+
+        {renderEmptyState(state, isDark)}
+
+        {state.data.map((request) => (
+          <AccessRequestCard
+            key={request.id}
+            request={request}
+            isDark={isDark}
+            isExpanded={expandedRequestId === request.id}
+            onToggle={toggleActions}
+            openModal={openModal}
           />
-        ) : null}
-
-        {state.error ? (
-          <View
-            style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
-          >
-            <ThemedText type="subtitle">Error</ThemedText>
-            <ThemedText style={styles.errorText}>{state.error}</ThemedText>
-          </View>
-        ) : null}
-
-        {!state.error && state.data.length === 0 && state.status === "ready" ? (
-          <View
-            style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
-          >
-            <ThemedText type="subtitle">
-              No se encontraron solicitudes de acceso
-            </ThemedText>
-            <ThemedText>
-              No tienes solicitudes pendientes en este momento.
-            </ThemedText>
-          </View>
-        ) : null}
-
-        {state.data.map((request, index) => (
-          <View
-            key={`access-request-${index}`}
-            style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
-          >
-            <View style={styles.cardHeader}>
-              <ThemedText type="subtitle">
-                {request.healthWorker.firstName} {request.healthWorker.lastName}
-              </ThemedText>
-              <ThemedText style={styles.metaText}>
-                Solicitado {request.createdAt ? formatDateTime(request.createdAt) : 'Fecha no disponible'}
-              </ThemedText>
-            </View>
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>Clínica</ThemedText>
-              <ThemedText>{request.clinic.name}</ThemedText>
-            </View>
-            <Pressable
-              style={styles.actionsToggle}
-              onPress={() => toggleActions(request.id)}
-              accessibilityRole="button"
-              accessibilityLabel="Toggle actions"
-            >
-              <ThemedText type="link">
-                {expandedRequestId === request.id
-                  ? "Ocultar acciones"
-                  : "Mostrar acciones"}
-              </ThemedText>
-            </Pressable>
-            {expandedRequestId === request.id ? (
-              <View style={styles.actionsContainer}>
-                <Pressable
-                  style={[styles.actionButton, styles.actionButtonPrimary]}
-                  onPress={() => openModal("grant-by-clinic", request.id)}
-                >
-                  <ThemedText style={styles.actionButtonText}>
-                    Otorgar acceso a la clínica
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  style={[styles.actionButton, styles.actionButtonSecondary]}
-                  onPress={() =>
-                    openModal("grant-by-health-worker", request.id)
-                  }
-                >
-                  <ThemedText style={styles.actionButtonText}>
-                    Otorgar acceso al profesional
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  style={[styles.actionButton, styles.actionButtonDeny]}
-                  onPress={() => openModal("deny", request.id)}
-                >
-                  <ThemedText style={styles.actionButtonText}>
-                    Denegar acceso
-                  </ThemedText>
-                </Pressable>
-                <ChoiceModal
-                  isVisible={isChoiceModalVisible}
-                  title={
-                    selectedAction?.type === "deny"
-                      ? "Denegar acceso a historia clínica"
-                      : "Otorgar acceso a historia clínica"
-                  }
-                  body={
-                    selectedAction?.type === "deny"
-                      ? `¿Estás seguro que quieres denegar acceso a ${request.healthWorker.firstName} ${request.healthWorker.lastName} a tu historia clínica?`
-                      : `¿Estás seguro que quieres otorgar acceso a ${
-                          selectedAction?.type === "grant-by-clinic"
-                            ? request.clinic.name
-                            : selectedAction?.type === "grant-by-health-worker"
-                            ? `${request.healthWorker.firstName} ${request.healthWorker.lastName}`
-                            : ""
-                        } a tu historia clínica?`
-                  }
-                  onCancel={closeModal}
-                  onConfirm={handleAction}
-                  confirmText={
-                    selectedAction?.type === "deny" ? "Rechazar" : "Aceptar"
-                  }
-                  cancelText="Cancelar"
-                />
-              </View>
-            ) : null}
-          </View>
         ))}
+        <ChoiceModal
+          isVisible={isChoiceModalVisible && !!selectedAction && !!selectedRequest}
+          title={buildModalTitle(selectedAction?.type)}
+          body={buildModalBody(selectedAction, selectedRequest)}
+          onCancel={closeModal}
+          onConfirm={handleAction}
+          confirmText={buildConfirmText(selectedAction?.type)}
+          cancelText="Cancelar"
+        />
       </ScrollView>
     </ThemedView>
+  );
+}
+
+const renderNotificationsCard = (
+  notificationsReady: boolean,
+  notificationError: string | null | undefined,
+  isRegisteringNotification: boolean,
+  isDark: boolean
+) => {
+  if (notificationsReady && !notificationError) {
+    return null;
+  }
+
+  return (
+    <View
+      style={[
+        styles.card,
+        isDark ? styles.cardDark : styles.cardLight,
+        styles.infoCard,
+      ]}
+    >
+      <ThemedText type="subtitle">Notificaciones push</ThemedText>
+      {notificationError ? (
+        <ThemedText style={styles.errorText}>{notificationError}</ThemedText>
+      ) : (
+        <ThemedText>
+          {isRegisteringNotification
+            ? "Registrando este dispositivo para notificaciones…"
+            : "Las notificaciones aún no están activas. Confirma los permisos y la configuración nativa de Firebase."}
+        </ThemedText>
+      )}
+    </View>
+  );
+};
+
+const renderLoadingIndicator = (state: ScreenState, isDark: boolean) => {
+  if (!(state.status === "loading" && state.data.length === 0)) {
+    return null;
+  }
+
+  return (
+    <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#000000"} />
+  );
+};
+
+const renderErrorCard = (state: ScreenState, isDark: boolean) => {
+  if (!state.error) {
+    return null;
+  }
+
+  return (
+    <View style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}>
+      <ThemedText type="subtitle">Error</ThemedText>
+      <ThemedText style={styles.errorText}>{state.error}</ThemedText>
+    </View>
+  );
+};
+
+const renderEmptyState = (state: ScreenState, isDark: boolean) => {
+  if (state.error || state.data.length !== 0 || state.status !== "ready") {
+    return null;
+  }
+
+  return (
+    <View style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}>
+      <ThemedText type="subtitle">No se encontraron solicitudes de acceso</ThemedText>
+      <ThemedText>No tienes solicitudes pendientes en este momento.</ThemedText>
+    </View>
+  );
+};
+
+type AccessRequestCardProps = {
+  request: AccessRequestDTO;
+  isDark: boolean;
+  isExpanded: boolean;
+  onToggle: (id: string) => void;
+  openModal: (action: ActionType, id: string, specialtyName?: string) => void;
+};
+
+function AccessRequestCard({
+  request,
+  isDark,
+  isExpanded,
+  onToggle,
+  openModal,
+}: AccessRequestCardProps) {
+  const workerName = request.healthWorker
+    ? `${request.healthWorker.firstName} ${request.healthWorker.lastName}`.trim()
+    : request.clinic?.name ?? "Solicitud";
+
+  return (
+    <View
+      style={[styles.card, isDark ? styles.cardDark : styles.cardLight]}
+    >
+      <View style={styles.cardHeader}>
+        <ThemedText type="subtitle">{workerName}</ThemedText>
+        <ThemedText style={styles.metaText}>
+          Solicitado {request.createdAt ? formatDateTime(request.createdAt) : 'Fecha no disponible'}
+        </ThemedText>
+      </View>
+      <View style={styles.detailRow}>
+        <ThemedText style={styles.detailLabel}>Clínica</ThemedText>
+        <ThemedText>{request.clinic?.name ?? "Sin especificar"}</ThemedText>
+      </View>
+      {request.specialtyNames?.length ? (
+        <View style={styles.detailRow}>
+          <ThemedText style={styles.detailLabel}>
+            Especialidades solicitadas
+          </ThemedText>
+          <View style={styles.specialtyList}>
+            {request.specialtyNames.map((specialty) => (
+              <View
+                key={`${request.id}-${specialty}-chip`}
+                style={styles.specialtyChip}
+              >
+                <ThemedText style={styles.specialtyChipText}>
+                  {specialty}
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      <Pressable
+        style={styles.actionsToggle}
+        onPress={() => onToggle(request.id)}
+        accessibilityRole="button"
+        accessibilityLabel="Toggle actions"
+      >
+        <ThemedText type="link">
+          {isExpanded ? "Ocultar acciones" : "Mostrar acciones"}
+        </ThemedText>
+      </Pressable>
+      {isExpanded ? (
+        <View style={styles.actionsContainer}>
+          <Pressable
+            style={[styles.actionButton, styles.actionButtonPrimary]}
+            onPress={() => openModal("grant-by-clinic", request.id)}
+          >
+            <ThemedText style={styles.actionButtonText}>
+              Otorgar acceso a la clínica
+            </ThemedText>
+          </Pressable>
+          {request.healthWorker?.ci ? (
+            <Pressable
+              style={[styles.actionButton, styles.actionButtonSecondary]}
+              onPress={() => openModal("grant-by-health-worker", request.id)}
+            >
+              <ThemedText style={styles.actionButtonText}>
+                Otorgar acceso al profesional
+              </ThemedText>
+            </Pressable>
+          ) : null}
+          {request.specialtyNames?.map((specialty) => (
+            <Pressable
+              key={`${request.id}-${specialty}-grant`}
+              style={[styles.actionButton, styles.actionButtonTertiary]}
+              onPress={() => openModal("grant-by-specialty", request.id, specialty)}
+            >
+              <ThemedText style={styles.actionButtonText}>
+                Otorgar acceso a {specialty}
+              </ThemedText>
+            </Pressable>
+          ))}
+          <Pressable
+            style={[styles.actionButton, styles.actionButtonDeny]}
+            onPress={() => openModal("deny", request.id)}
+          >
+            <ThemedText style={styles.actionButtonText}>
+              Denegar acceso
+            </ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -425,6 +613,9 @@ const styles = StyleSheet.create({
   actionButtonSecondary: {
     backgroundColor: "#0f766e",
   },
+  actionButtonTertiary: {
+    backgroundColor: "#7c3aed",
+  },
   actionButtonDeny: {
     backgroundColor: "#dc2626",
   },
@@ -432,5 +623,21 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "600",
     textAlign: "center",
+  },
+  specialtyList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  specialtyChip: {
+    backgroundColor: "#0d47a1",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  specialtyChipText: {
+    color: "#ffffff",
+    fontSize: 12,
   },
 });

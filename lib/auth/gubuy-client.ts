@@ -188,8 +188,6 @@ async function pollForCallbackData(): Promise<PortalSession> {
 
       if (data.code && data.state) {
         console.log('✅ Authentication successful! Processing callback data...');
-        // Clear the callback data from server
-        await fetch('http://192.168.1.104:8080/clear-callback', { method: 'POST' });
         // Process the callback
         return await handleCallback(`http://192.168.1.104:8080/callback?code=${data.code}&state=${data.state}`);
       }

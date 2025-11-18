@@ -1,6 +1,8 @@
 import type { AccessRequestDTO } from '@/types/AccessRequestDTO';
 import type { AddClinicAccessPolicyDTO } from '@/types/AddClinicAccessPolicyDTO';
 import type { AddHealthWorkerAccessPolicyDTO } from '@/types/AddHealthWorkerAccessPolicyDTO';
+import type { AddSpecialtyAccessPolicyDTO } from '@/types/AddSpecialtyAccessPolicyDTO';
+import type { HealthUserDTO } from '@/types/HealthUserDTO';
 
 type GlobalWithHelpers = typeof globalThis & {
   btoa?: (data: string) => string;
@@ -82,6 +84,78 @@ const isAccessRequestDTO = (value: unknown): value is AccessRequestDTO => {
   );
 };
 
+const isHealthUserDTO = (value: unknown): value is HealthUserDTO => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<HealthUserDTO>;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.ci === 'string' &&
+    typeof candidate.firstName === 'string' &&
+    typeof candidate.lastName === 'string'
+  );
+};
+
+const isErrorPayload = (value: unknown): value is { error: string } =>
+  !!value && typeof value === 'object' && typeof (value as { error?: string }).error === 'string';
+
+const safeJsonParse = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+export const fetchHealthUser = async (
+  healthUserCi: string
+): Promise<HealthUserDTO | null> => {
+  if (!healthUserCi) {
+    throw new Error('healthUserCi is required');
+  }
+  const url = buildUrl(`health-users/${encodeURIComponent(healthUserCi)}`);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, { headers });
+
+  const raw = await response.text().catch(() => '');
+  const payload = raw ? safeJsonParse(raw) : null;
+
+  if (response.status === 404 || response.status === 204 || isErrorPayload(payload)) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch health user (${response.status}): ${raw || response.statusText}`
+    );
+  }
+
+  if (!payload) {
+    return null;
+  }
+
+  if (!isHealthUserDTO(payload)) {
+    console.warn('Health user payload does not match expected shape. Treating as missing.', {
+      payload,
+    });
+    return null;
+  }
+
+  return payload;
+};
+
 export const fetchHealthUserAccessRequests = async (
   healthUserId: string
 ): Promise<AccessRequestDTO[]> => {
@@ -100,15 +174,7 @@ export const fetchHealthUserAccessRequests = async (
     headers.Authorization = auth;
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[API] GET', url);
-  }
-
   const response = await fetch(url, { headers });
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[API] status', response.status);
-  }
 
   if (!response.ok) {
     const errorPayload = await response.text().catch(() => '');
@@ -118,16 +184,6 @@ export const fetchHealthUserAccessRequests = async (
   }
 
   const data = (await response.json()) as unknown;
-
-  if (process.env.NODE_ENV === 'development') {
-    if (Array.isArray(data)) {
-      console.log('[API] array length', data.length, 'keys', Object.keys((data[0] as any) || {}));
-    } else if (data && typeof data === 'object') {
-      console.log('[API] object keys', Object.keys(data as Record<string, unknown>));
-    } else {
-      console.log('[API] unexpected payload type', typeof data);
-    }
-  }
 
   if (Array.isArray(data)) {
     const typed = data.filter(isAccessRequestDTO);
@@ -264,7 +320,8 @@ export const grantHealthWorkerAccessPolicy = async (
   accessRequest: AccessRequestDTO
 ): Promise<Response> => {
   assertNonEmpty(accessRequest.id, 'accessRequestId');
-  assertNonEmpty(accessRequest.healthWorker.ci, 'healthWorkerCi');
+  const healthWorkerCi = accessRequest.healthWorker?.ci;
+  assertNonEmpty(healthWorkerCi ?? '', 'healthWorkerCi');
   assertNonEmpty(accessRequest.clinic.name, 'clinicName');
 
   const url = buildUrl('/access-policies/health-worker');
@@ -280,8 +337,42 @@ export const grantHealthWorkerAccessPolicy = async (
 
   const payload: AddHealthWorkerAccessPolicyDTO = {
     healthUserCi: accessRequest.healthUserCi,
-    healthWorkerCi: accessRequest.healthWorker.ci,
+    healthWorkerCi: healthWorkerCi ?? '',
     clinicName: accessRequest.clinic.name,
+    accessRequestId: accessRequest.id,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  return response;
+};
+
+export const grantSpecialtyAccessPolicy = async (
+  accessRequest: AccessRequestDTO,
+  specialtyName: string
+): Promise<Response> => {
+  assertNonEmpty(accessRequest.id, 'accessRequestId');
+  assertNonEmpty(accessRequest.healthUserCi, 'healthUserCi');
+  assertNonEmpty(specialtyName, 'specialtyName');
+
+  const url = buildUrl('/access-policies/specialty');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const payload: AddSpecialtyAccessPolicyDTO = {
+    healthUserCi: accessRequest.healthUserCi,
+    specialtyName,
     accessRequestId: accessRequest.id,
   };
 

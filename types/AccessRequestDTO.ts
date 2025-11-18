@@ -3,8 +3,10 @@ import { HealthWorkerDTO } from "./HealthWorkerDTO";
 
 export interface AccessRequestDTO {
   id: string;
+  healthUserId?: string;
   healthUserCi: string;
-  healthWorker: HealthWorkerDTO;
+  healthWorker?: HealthWorkerDTO;
   clinic: ClinicDTO;
+  specialtyNames?: string[];
   createdAt?: string;
 }

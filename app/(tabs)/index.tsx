@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { fetchHealthUser } from "@/lib/api";
 import { logout } from "@/lib/auth/gubuy-client";
 import { getSession } from "@/lib/auth/session-manager";
 import type { PortalSession } from "@/lib/types";
@@ -23,6 +24,10 @@ export default function ProfileScreen() {
   const [session, setSession] = useState<PortalSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isCheckingHealthUser, setIsCheckingHealthUser] = useState(false);
+  const [healthUserMissing, setHealthUserMissing] = useState(false);
+  const [healthUserError, setHealthUserError] = useState<string | null>(null);
+  const hasRedirectedToLogin = useRef(false);
 
   const loadSession = useCallback(async () => {
     try {
@@ -76,6 +81,113 @@ export default function ProfileScreen() {
     }, [loadSession])
   );
 
+  useEffect(() => {
+    if (!isLoading && !session && !hasRedirectedToLogin.current) {
+      hasRedirectedToLogin.current = true;
+      router.replace("/(auth)/login");
+    }
+  }, [isLoading, session, router]);
+
+  const verifyHealthUser = useCallback(async () => {
+    if (!session?.healthUser?.id) {
+      setHealthUserMissing(false);
+      setHealthUserError(null);
+      return;
+    }
+
+    try {
+      setIsCheckingHealthUser(true);
+      setHealthUserMissing(false);
+      setHealthUserError(null);
+      const healthUser = await fetchHealthUser(session.healthUser.id);
+      setHealthUserMissing(!healthUser);
+    } catch (error) {
+      console.error("Error verifying health user:", error);
+      setHealthUserError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo verificar tu usuario. Intenta nuevamente."
+      );
+    } finally {
+      setIsCheckingHealthUser(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    verifyHealthUser();
+  }, [verifyHealthUser]);
+
+  const renderHealthUserGate = () => {
+    if (!session) {
+      return null;
+    }
+
+    if (isCheckingHealthUser) {
+      return (
+        <ThemedView style={styles.screen}>
+          <View style={styles.centerContent}>
+            <ActivityIndicator
+              size="large"
+              color={isDark ? "#ffffff" : "#000000"}
+            />
+            <ThemedText style={styles.loadingText}>
+              Verificando tu usuario...
+            </ThemedText>
+          </View>
+        </ThemedView>
+      );
+    }
+
+    if (healthUserMissing) {
+      return (
+        <ThemedView style={styles.screen}>
+          <View style={styles.centerContent}>
+            <ThemedText type="title">Usuario no registrado</ThemedText>
+            <ThemedText style={styles.messageText}>
+              Necesitas que un administrador de clínica registre tu usuario en
+              el sistema antes de continuar.
+            </ThemedText>
+            <Pressable
+              style={styles.button}
+              onPress={verifyHealthUser}
+              disabled={isCheckingHealthUser}
+            >
+              <ThemedText style={styles.buttonText}>Reintentar verificación</ThemedText>
+            </Pressable>
+            <Pressable
+              style={[styles.logoutButton, styles.logoutButtonSecondary]}
+              onPress={handleLogout}
+            >
+              <ThemedText style={styles.logoutButtonText}>Cerrar sesión</ThemedText>
+            </Pressable>
+          </View>
+        </ThemedView>
+      );
+    }
+
+    if (healthUserError) {
+      return (
+        <ThemedView style={styles.screen}>
+          <View style={styles.centerContent}>
+            <ThemedText type="title">
+              No pudimos verificar tu usuario
+            </ThemedText>
+            <ThemedText style={styles.messageText}>{healthUserError}</ThemedText>
+            <Pressable
+              style={styles.button}
+              onPress={verifyHealthUser}
+              disabled={isCheckingHealthUser}
+            >
+              <ThemedText style={styles.buttonText}>Intentar nuevamente</ThemedText>
+            </Pressable>
+          </View>
+        </ThemedView>
+      );
+    }
+
+    return null;
+  };
+
   if (isLoading) {
     return (
       <ThemedView style={styles.screen}>
@@ -94,16 +206,21 @@ export default function ProfileScreen() {
     return (
       <ThemedView style={styles.screen}>
         <View style={styles.centerContent}>
-          <ThemedText type="title">No hay sesión activa</ThemedText>
-          <Pressable
-            style={styles.button}
-            onPress={() => router.replace("/(auth)/login")}
-          >
-            <ThemedText style={styles.buttonText}>Iniciar sesión</ThemedText>
-          </Pressable>
+          <ActivityIndicator
+            size="large"
+            color={isDark ? "#ffffff" : "#000000"}
+          />
+          <ThemedText type="title">
+            Redirigiendo a inicio de sesión...
+          </ThemedText>
         </View>
       </ThemedView>
     );
+  }
+
+  const healthUserGate = renderHealthUserGate();
+  if (healthUserGate) {
+    return healthUserGate;
   }
 
   return (
@@ -233,6 +350,10 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 8,
   },
+  messageText: {
+    textAlign: "center",
+    lineHeight: 22,
+  },
   card: {
     borderRadius: 12,
     padding: 16,
@@ -273,6 +394,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#dc2626",
     marginTop: 8,
+  },
+  logoutButtonSecondary: {
+    width: "100%",
   },
   logoutButtonText: {
     color: "#ffffff",
