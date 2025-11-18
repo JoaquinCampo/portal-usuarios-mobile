@@ -2,6 +2,7 @@ import type { AccessRequestDTO } from '@/types/AccessRequestDTO';
 import type { AddClinicAccessPolicyDTO } from '@/types/AddClinicAccessPolicyDTO';
 import type { AddHealthWorkerAccessPolicyDTO } from '@/types/AddHealthWorkerAccessPolicyDTO';
 import type { AddSpecialtyAccessPolicyDTO } from '@/types/AddSpecialtyAccessPolicyDTO';
+import type { ClinicalHistoryResponseDTO } from '@/types/ClinicalHistoryResponseDTO';
 import type { HealthUserDTO } from '@/types/HealthUserDTO';
 
 type GlobalWithHelpers = typeof globalThis & {
@@ -408,4 +409,36 @@ export const denyAccessRequest = async (
   });
 
   return response;
+};
+
+/**
+ * Fetch clinical history for a health user
+ */
+export const fetchClinicalHistory = async (
+  healthUserCi: string
+): Promise<ClinicalHistoryResponseDTO> => {
+  assertNonEmpty(healthUserCi, 'healthUserCi');
+
+  const url = buildUrl(`/clinical-history/${encodeURIComponent(healthUserCi)}`);
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  const auth = getAuthHeader();
+
+  if (auth) {
+    headers.Authorization = auth;
+  }
+
+  const response = await fetch(url, { headers });
+
+  if (!response.ok) {
+    const errorPayload = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to fetch clinical history (${response.status}): ${errorPayload || response.statusText}`
+    );
+  }
+
+  const data = await response.json();
+  return data as ClinicalHistoryResponseDTO;
 };

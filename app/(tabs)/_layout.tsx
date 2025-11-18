@@ -24,6 +24,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="clinical-history"
+        options={{
+          title: 'Historia Clínica',
+          tabBarIcon: ({ color }) => <Ionicons size={28} name="medical" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="access-requests"
         options={{
           title: 'Solicitudes de Acceso',
